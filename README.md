@@ -1,8 +1,8 @@
-4‑Week MERN + TypeScript Intensive: Study Plan + Project (SecureNotes)
+# 4‑Week MERN + TypeScript Intensive: Study Plan + Project (SecureNotes)
 
-Goal: bring a colleague from shaky MERN knowledge to solid full‑stack competency (TypeScript + Node/Express + MongoDB + React + Redux Toolkit + React Query), with strong practical knowledge of middleware, authentication & authorization, encryption, and common web app security patterns.
+## Goal: bring a colleague from shaky MERN knowledge to solid full‑stack competency (TypeScript + Node/Express + MongoDB + React + Redux Toolkit + React Query), with strong practical knowledge of middleware, authentication & authorization, encryption, and common web app security patterns.
 
-This document contains:
+### This document contains:
 	•	A 4‑week plan with weekly learning goals and daily exercises.
 	•	A detailed small project (SecureNotes) with full requirements, API spec, DB models, folder structure and a step‑by‑step execution plan.
 	•	Code examples (TypeScript + JS) for critical pieces: server, middleware, auth, encryption, frontend store, axios + interceptors, protected routing.
@@ -10,17 +10,17 @@ This document contains:
 
 ⸻
 
-What to expect / prerequisites
+### What to expect / prerequisites
 	•	Prior knowledge assumed: basic JavaScript, git, basic HTML/CSS, familiarity with Node.js/npm. If not, add 3–5 days of prework.
 	•	Suggested cadence: practice/coding every weekday. Use weekends for deeper practice, polish and catch‑up. The plan is modular — skip or move items based on the colleague’s pace.
 
 ⸻
 
-Week 1 — Foundations: TypeScript + Node basics + Project scaffolding
+## Week 1 — Foundations: TypeScript + Node basics + Project scaffolding
 
-Learning goals: TypeScript basics & patterns useful in full‑stack apps, setup a typed Node/Express backend, create DB models with types.
+### Learning goals: TypeScript basics & patterns useful in full‑stack apps, setup a typed Node/Express backend, create DB models with types.
 
-Day‑by‑day (high level)
+#### Day‑by‑day (high level)
 	•	Day 1 — TypeScript essentials: types (primitive, union, tuple), interfaces vs types, enums, type inference, tsconfig essentials.
 	•	Exercises: convert small JS snippets to TS; create a typed User shape.
 	•	Day 2 — TS advanced: generics, utility types (Partial, Pick, Omit, Record), unknown vs any, mapped types.
@@ -29,10 +29,10 @@ Day‑by‑day (high level)
 	•	Day 4 — MongoDB + Mongoose + Types: design Mongoose schemas with TypeScript interfaces; basic connection & error handling.
 	•	Day 5 — Project scaffolding & README: create monorepo or two repos (backend/frontend), define env variables, create skeleton routes and start scripts.
 
-Quick examples (setup snippets)
+#### Quick examples (setup snippets)
 
 tsconfig.json (minimal)
-
+```
 {
   "compilerOptions": {
     "target": "ES2020",
@@ -45,9 +45,9 @@ tsconfig.json (minimal)
   },
   "include": ["src"]
 }
-
-Install (backend)
-
+```
+#### Install (backend)
+```
 npm init -y
 npm i express mongoose dotenv bcryptjs jsonwebtoken cookie-parser helmet cors
 npm i -D typescript ts-node-dev @types/express @types/node @types/cookie-parser
@@ -72,22 +72,22 @@ app.get('/_health', (_req, res) => res.json({ ok: true }));
 const port = process.env.PORT || 4000;
 app.listen(port, () => console.log(`Server running on ${port}`));
 
-
+```
 
 ⸻
 
-Week 2 — Server internals, middleware, auth basics & encryption fundamentals
+## Week 2 — Server internals, middleware, auth basics & encryption fundamentals
 
 Learning goals: write robust middleware, implement registration/login with secure password storage, JWT + refresh tokens concept, basic encryption for sensitive fields.
 
-Topics & exercises
+### Topics & exercises
 	•	Middleware patterns: request validation, central error handler, logging middleware (winston or simple console), async error wrapper.
 	•	Auth flow: register (hash with bcrypt), login (verify + issue access token + refresh token), protect routes with middleware, role checks.
 	•	Refresh token best practices: rotate refresh tokens, store refresh tokens in DB (or short lived with fingerprint) and set refresh cookie as HttpOnly; Secure; SameSite=Strict.
 	•	Encryption: symmetric encryption for storing sensitive user data (not passwords!) using Node crypto (AES‑GCM recommended). Passwords must be hashed, not encrypted.
 
-Key code snippets
-
+### Key code snippets
+```js
 User model (Mongoose, simplified)
 
 import { Schema, model, Document } from 'mongoose';
@@ -143,9 +143,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ message: 'Invalid token' });
   }
 }
-
-Symmetric encrypt/decrypt util (AES‑256‑GCM)
-
+```
+### Symmetric encrypt/decrypt util (AES‑256‑GCM)
+```js
 import crypto from 'crypto';
 
 const ALGO = 'aes-256-gcm';
@@ -170,16 +170,16 @@ export function decrypt(payloadB64: string, keyBase64: string) {
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
 }
-
+```
 Note: store encryption keys in secure secrets (env manager, Vault). Never commit keys.
 
 ⸻
 
-Week 3 — Frontend: React + TypeScript + Redux Toolkit + React Query + secure navigation
+## Week 3 — Frontend: React + TypeScript + Redux Toolkit + React Query + secure navigation
 
-Learning goals: build typed React apps with state management and server data fetching, implement secure auth flows client side, protect navigation and sensitive routes, use react-query for server state.
+### Learning goals: build typed React apps with state management and server data fetching, implement secure auth flows client side, protect navigation and sensitive routes, use react-query for server state.
 
-Topics & exercises
+### Topics & exercises
 	•	Scaffold: create Vite + React + TypeScript app.
 	•	Forms & validation: react-hook-form + zod for typed validation and runtime checks.
 	•	State management: Redux Toolkit for global UI/auth state; keep minimal state (auth metadata). Use RTK query only if needed — otherwise prefer React Query for server data.
@@ -188,7 +188,7 @@ Topics & exercises
 	•	Navigation security: ProtectedRoute component, role guard, route-level lazy loading and avoiding leaking protected UI.
 
 Frontend code snippets
-
+```js
 Axios instance with interceptor (errors -> refresh)
 
 // src/api/axios.ts
@@ -238,9 +238,9 @@ api.interceptors.response.use(
 );
 
 export default api;
-
-Protected route (React Router v6)
-
+``` 
+### Protected route (React Router v6)
+```js
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAppSelector } from '../store/hooks';
 
@@ -263,11 +263,11 @@ export function useNotes() {
   }, { staleTime: 1000 * 60 });
 }
 
-
+```
 
 ⸻
 
-Week 4 — Hardening, testing, deployment, final polish
+## Week 4 — Hardening, testing, deployment, final polish
 
 Learning goals: security hardening, logging, tests, CI, containerization, final project delivery.
 
@@ -300,7 +300,7 @@ Tech stack
 	•	Dev tools: Docker, Jest/RTL, Supertest, ESLint, Prettier
 
 Folder structure (suggested)
-
+```
 secure-notes/
   backend/
     src/
@@ -325,9 +325,9 @@ secure-notes/
     tsconfig.json
   docker-compose.yml
   README.md
-
-DB Models (simplified)
-
+```
+### DB Models (simplified)
+```
 User
 
 interface User {
@@ -358,8 +358,8 @@ interface RefreshToken {
   revoked?: boolean;
   fingerprint?: string; // optional client fingerprint
 }
-
-API spec (example endpoints)
+```
+### API spec (example endpoints)
 	•	POST /api/auth/register — body { email, password } -> 201 created
 	•	POST /api/auth/login — body { email, password } -> returns { accessToken } and sets refresh cookie
 	•	POST /api/auth/refresh — reads refresh cookie -> sets new accessToken (and rotate refresh)
@@ -373,7 +373,7 @@ Include request/response examples in real implementation (use Postman for testin
 
 ⸻
 
-Step‑by‑step execution plan (milestones + tasks)
+## Step‑by‑step execution plan (milestones + tasks)
 
 Milestone 0: repo & environment
 	1.	Create secure-notes repo (or two repos). Add .gitignore, README, .env.example.
@@ -413,6 +413,7 @@ Milestone 5: Hardening, tests & deployment
 
 
 #####################################################################
+# PLAN 2
 
 # 4-Week MERN Stack Mastery Plan
 
