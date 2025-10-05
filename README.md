@@ -1,420 +1,3 @@
-# 4‑Week MERN + TypeScript Intensive: Study Plan + Project (SecureNotes)
-
-## Goal: bring a colleague from shaky MERN knowledge to solid full‑stack competency (TypeScript + Node/Express + MongoDB + React + Redux Toolkit + React Query), with strong practical knowledge of middleware, authentication & authorization, encryption, and common web app security patterns.
-
-### This document contains:
-	•	A 4‑week plan with weekly learning goals and daily exercises.
-	•	A detailed small project (SecureNotes) with full requirements, API spec, DB models, folder structure and a step‑by‑step execution plan.
-	•	Code examples (TypeScript + JS) for critical pieces: server, middleware, auth, encryption, frontend store, axios + interceptors, protected routing.
-	•	Security checklist and evaluation rubric.
-
-⸻
-
-### What to expect / prerequisites
-	•	Prior knowledge assumed: basic JavaScript, git, basic HTML/CSS, familiarity with Node.js/npm. If not, add 3–5 days of prework.
-	•	Suggested cadence: practice/coding every weekday. Use weekends for deeper practice, polish and catch‑up. The plan is modular — skip or move items based on the colleague’s pace.
-
-⸻
-
-## Week 1 — Foundations: TypeScript + Node basics + Project scaffolding
-
-### Learning goals: TypeScript basics & patterns useful in full‑stack apps, setup a typed Node/Express backend, create DB models with types.
-
-#### Day‑by‑day (high level)
-	•	Day 1 — TypeScript essentials: types (primitive, union, tuple), interfaces vs types, enums, type inference, tsconfig essentials.
-	•	Exercises: convert small JS snippets to TS; create a typed User shape.
-	•	Day 2 — TS advanced: generics, utility types (Partial, Pick, Omit, Record), unknown vs any, mapped types.
-	•	Exercise: write a typed Repository<T> interface for CRUD operations.
-	•	Day 3 — Node + Express in TS: set up project, ts-node-dev or esbuild for dev, basic Express server, dotenv config.
-	•	Day 4 — MongoDB + Mongoose + Types: design Mongoose schemas with TypeScript interfaces; basic connection & error handling.
-	•	Day 5 — Project scaffolding & README: create monorepo or two repos (backend/frontend), define env variables, create skeleton routes and start scripts.
-
-#### Quick examples (setup snippets)
-
-tsconfig.json (minimal)
-```
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "outDir": "dist",
-    "sourceMap": true
-  },
-  "include": ["src"]
-}
-```
-#### Install (backend)
-```
-npm init -y
-npm i express mongoose dotenv bcryptjs jsonwebtoken cookie-parser helmet cors
-npm i -D typescript ts-node-dev @types/express @types/node @types/cookie-parser
-
-Basic Express server (src/server.ts)
-
-import express from 'express';
-import helmet from 'helmet';
-import cors from 'cors';
-import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
-
-dotenv.config();
-const app = express();
-app.use(helmet());
-app.use(cors({ origin: process.env.FRONTEND_ORIGIN, credentials: true }));
-app.use(express.json());
-app.use(cookieParser());
-
-app.get('/_health', (_req, res) => res.json({ ok: true }));
-
-const port = process.env.PORT || 4000;
-app.listen(port, () => console.log(`Server running on ${port}`));
-
-```
-
-⸻
-
-## Week 2 — Server internals, middleware, auth basics & encryption fundamentals
-
-Learning goals: write robust middleware, implement registration/login with secure password storage, JWT + refresh tokens concept, basic encryption for sensitive fields.
-
-### Topics & exercises
-	•	Middleware patterns: request validation, central error handler, logging middleware (winston or simple console), async error wrapper.
-	•	Auth flow: register (hash with bcrypt), login (verify + issue access token + refresh token), protect routes with middleware, role checks.
-	•	Refresh token best practices: rotate refresh tokens, store refresh tokens in DB (or short lived with fingerprint) and set refresh cookie as HttpOnly; Secure; SameSite=Strict.
-	•	Encryption: symmetric encryption for storing sensitive user data (not passwords!) using Node crypto (AES‑GCM recommended). Passwords must be hashed, not encrypted.
-
-### Key code snippets
-```js
-User model (Mongoose, simplified)
-
-import { Schema, model, Document } from 'mongoose';
-
-export interface IUser extends Document {
-  email: string;
-  passwordHash: string;
-  role: 'user' | 'admin';
-}
-
-const UserSchema = new Schema<IUser>({
-  email: { type: String, required: true, unique: true },
-  passwordHash: { type: String, required: true },
-  role: { type: String, default: 'user' }
-}, { timestamps: true });
-
-export const UserModel = model<IUser>('User', UserSchema);
-
-Register & Login (essential parts)
-
-// utils/auth.ts
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-
-export async function hashPassword(pw: string) {
-  return bcrypt.hash(pw, 12);
-}
-export async function comparePassword(pw: string, hash: string) {
-  return bcrypt.compare(pw, hash);
-}
-export function signAccessToken(payload: object) {
-  return jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET!, { expiresIn: '15m' });
-}
-export function signRefreshToken(payload: object) {
-  return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET!, { expiresIn: '7d' });
-}
-
-Auth middleware (protect routes)
-
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ message: 'No token' });
-  const token = auth.split(' ')[1];
-  try {
-    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!);
-    // attach user to req (cast as any) - in prod, use typed request
-    (req as any).user = payload;
-    return next();
-  } catch (err) {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
-}
-```
-### Symmetric encrypt/decrypt util (AES‑256‑GCM)
-```js
-import crypto from 'crypto';
-
-const ALGO = 'aes-256-gcm';
-const IV_LEN = 12;
-
-export function encrypt(text: string, keyBase64: string) {
-  const key = Buffer.from(keyBase64, 'base64');
-  const iv = crypto.randomBytes(IV_LEN);
-  const cipher = crypto.createCipheriv(ALGO, key, iv);
-  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, encrypted]).toString('base64');
-}
-
-export function decrypt(payloadB64: string, keyBase64: string) {
-  const data = Buffer.from(payloadB64, 'base64');
-  const iv = data.slice(0, IV_LEN);
-  const tag = data.slice(IV_LEN, IV_LEN + 16);
-  const encrypted = data.slice(IV_LEN + 16);
-  const key = Buffer.from(keyBase64, 'base64');
-  const decipher = crypto.createDecipheriv(ALGO, key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-}
-```
-Note: store encryption keys in secure secrets (env manager, Vault). Never commit keys.
-
-⸻
-
-## Week 3 — Frontend: React + TypeScript + Redux Toolkit + React Query + secure navigation
-
-### Learning goals: build typed React apps with state management and server data fetching, implement secure auth flows client side, protect navigation and sensitive routes, use react-query for server state.
-
-### Topics & exercises
-	•	Scaffold: create Vite + React + TypeScript app.
-	•	Forms & validation: react-hook-form + zod for typed validation and runtime checks.
-	•	State management: Redux Toolkit for global UI/auth state; keep minimal state (auth metadata). Use RTK query only if needed — otherwise prefer React Query for server data.
-	•	React Query: use useQuery/useMutation, caching strategy, optimistic updates for CRUD.
-	•	Auth patterns: store access token in memory (React context / Redux), refresh token as HttpOnly cookie; implement Axios instance with interceptor that attempts refresh on 401.
-	•	Navigation security: ProtectedRoute component, role guard, route-level lazy loading and avoiding leaking protected UI.
-
-Frontend code snippets
-```js
-Axios instance with interceptor (errors -> refresh)
-
-// src/api/axios.ts
-import axios from 'axios';
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE,
-  withCredentials: true // important for HttpOnly refresh cookie
-});
-
-let isRefreshing = false;
-let refreshSubscribers: ((token: string) => void)[] = [];
-
-function onRefreshed(token: string) {
-  refreshSubscribers.forEach(cb => cb(token));
-  refreshSubscribers = [];
-}
-
-api.interceptors.response.use(
-  r => r,
-  async err => {
-    const original = err.config;
-    if (err.response?.status === 401 && !original._retry) {
-      original._retry = true;
-      if (!isRefreshing) {
-        isRefreshing = true;
-        try {
-          const { data } = await api.post('/auth/refresh');
-          isRefreshing = false;
-          onRefreshed(data.accessToken);
-        } catch (e) {
-          isRefreshing = false;
-          // redirect to login
-          window.location.href = '/login';
-          return Promise.reject(e);
-        }
-      }
-      return new Promise((resolve) => {
-        refreshSubscribers.push((token: string) => {
-          original.headers.Authorization = `Bearer ${token}`;
-          resolve(axios(original));
-        });
-      });
-    }
-    return Promise.reject(err);
-  }
-);
-
-export default api;
-``` 
-### Protected route (React Router v6)
-```js
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAppSelector } from '../store/hooks';
-
-export function RequireAuth({ allowedRoles }: { allowedRoles?: string[] }) {
-  const auth = useAppSelector(s => s.auth);
-  if (!auth.isAuthenticated) return <Navigate to="/login" replace />;
-  if (allowedRoles && !allowedRoles.includes(auth.user?.role)) return <Navigate to="/unauthorized" replace />;
-  return <Outlet />;
-}
-
-React Query example (fetch notes)
-
-import { useQuery } from '@tanstack/react-query';
-import api from './axios';
-
-export function useNotes() {
-  return useQuery(['notes'], async () => {
-    const { data } = await api.get('/notes');
-    return data;
-  }, { staleTime: 1000 * 60 });
-}
-
-```
-
-⸻
-
-## Week 4 — Hardening, testing, deployment, final polish
-
-Learning goals: security hardening, logging, tests, CI, containerization, final project delivery.
-
-Topics & checklist
-	•	Server hardening: Helmet CSP config, remove X-Powered-By, rate limiting (express-rate-limit), enforce HTTPS (redirect), CORS whitelist.
-	•	Input validation & sanitization: use zod or joi on all endpoints, sanitize strings to prevent XSS on output.
-	•	Secrets & configs: load from env, do not commit .env, use .env.example.
-	•	Logging & monitoring: structured logs, request IDs, error telemetry (Sentry), audit logs for critical actions (login, role change, share note).
-	•	Testing: unit tests for utilities (auth, encrypt), integration tests for APIs (supertest), UI tests (React Testing Library), e2e (Cypress).
-	•	Deployment: Dockerize backend & frontend, use docker-compose for local stack, set up basic CI (GitHub Actions) for build + test + lint.
-
-⸻
-
-Project: SecureNotes — full details
-
-Short description: SecureNotes is a small MERN app where registered users can create encrypted personal notes, optionally share them with other users (authorization), and admins can manage users. The project requires strong focus on authentication, token management, encryption of note content at rest, and secure client/server interactions.
-
-Features (MVP)
-	1.	User registration + login (email + password) with hashed password.
-	2.	JWT access tokens + refresh tokens (HttpOnly cookie). Access token used for API calls.
-	3.	Create, Read, Update, Delete notes. Note content stored encrypted in DB.
-	4.	Share note with another user (simple sharing model: grant read / edit rights).
-	5.	Role based pages: user and admin (admin can list and deactivate users).
-	6.	Audit log of critical events: login, failed login, note shared, note deleted.
-
-Tech stack
-	•	Backend: Node.js, Express, TypeScript, Mongoose, bcrypt, jsonwebtoken, helmet, cors, express-rate-limit
-	•	Frontend: React + TypeScript (Vite), Redux Toolkit, React Query, React Router v6, Axios, react-hook-form + zod
-	•	DB: MongoDB (Atlas or local)
-	•	Dev tools: Docker, Jest/RTL, Supertest, ESLint, Prettier
-
-Folder structure (suggested)
-```
-secure-notes/
-  backend/
-    src/
-      controllers/
-      services/
-      middlewares/
-      models/
-      utils/
-      routes/
-      server.ts
-    package.json
-    tsconfig.json
-  frontend/
-    src/
-      components/
-      pages/
-      hooks/
-      api/
-      store/
-      App.tsx
-    package.json
-    tsconfig.json
-  docker-compose.yml
-  README.md
-```
-### DB Models (simplified)
-```
-User
-
-interface User {
-  _id: ObjectId;
-  email: string;
-  passwordHash: string;
-  role: 'user' | 'admin';
-  disabled?: boolean;
-}
-
-Note
-
-interface Note {
-  _id: ObjectId;
-  ownerId: ObjectId;
-  title: string; // optional to store plaintext or encrypted
-  contentEncrypted: string; // encrypted blob (base64)
-  sharedWith: Array<{ userId: ObjectId; permissions: 'read' | 'edit' }>;
-  createdAt: Date;
-}
-
-RefreshToken (optional)
-
-interface RefreshToken {
-  token: string;
-  userId: ObjectId;
-  expiresAt: Date;
-  revoked?: boolean;
-  fingerprint?: string; // optional client fingerprint
-}
-```
-### API spec (example endpoints)
-	•	POST /api/auth/register — body { email, password } -> 201 created
-	•	POST /api/auth/login — body { email, password } -> returns { accessToken } and sets refresh cookie
-	•	POST /api/auth/refresh — reads refresh cookie -> sets new accessToken (and rotate refresh)
-	•	POST /api/auth/logout — invalidates refresh token (clear cookie)
-	•	GET /api/notes — auth required -> returns user notes and shared notes
-	•	POST /api/notes — auth required -> create note (encrypt content server side)
-	•	PUT /api/notes/:id — update note (owner or edit permission)
-	•	POST /api/notes/:id/share — share note with user (owner only)
-
-Include request/response examples in real implementation (use Postman for testing).
-
-⸻
-
-## Step‑by‑step execution plan (milestones + tasks)
-
-Milestone 0: repo & environment
-	1.	Create secure-notes repo (or two repos). Add .gitignore, README, .env.example.
-	2.	Create backend scaffold (npm, TypeScript, Express). Create start/dev scripts.
-	3.	Create frontend scaffold (Vite). Add eslint + prettier configs.
-
-Milestone 1: Basic auth & user model
-	1.	Implement User model and DB connection.
-	2.	Implement POST /auth/register that hashes password and saves user.
-	3.	Implement POST /auth/login that verifies password and issues access token and sets refresh cookie.
-	4.	Implement requireAuth middleware and a protected test endpoint GET /me.
-
-Milestone 2: Notes CRUD + encryption
-	1.	Implement Note model; create encrypt() / decrypt() util.
-	2.	Implement POST /notes that encrypts content server‑side before saving.
-	3.	Implement GET /notes to decrypt notes for authorized user.
-	4.	Implement PUT /notes/:id and DELETE /notes/:id with permission checks.
-
-Milestone 3: Sharing & roles
-	1.	Implement POST /notes/:id/share — send invite or set sharedWith.
-	2.	Implement admin routes to list/deactivate users.
-	3.	Add audit logging for share/delete/login events.
-
-Milestone 4: Refresh tokens & client flows
-	1.	Implement refresh token storage (DB) and endpoint to rotate/issue new tokens.
-	2.	Frontend: implement login/register pages. Store accessToken in memory and rely on refresh cookie.
-	3.	Implement Axios interceptor to refresh on 401.
-
-Milestone 5: Hardening, tests & deployment
-	1.	Add helmet, rate limiter, input validation, CORS whitelist.
-	2.	Add unit tests (Jest) and integration tests (supertest).
-	3.	Dockerize and create docker-compose for local dev, add README with run steps.
-	4.	Add CI workflow to run lint/test/build on PRs.
-
-⸻
-
-
-
-#####################################################################
-# PLAN 2
-
 # 4-Week MERN Stack Mastery Plan
 
 ## Overview
@@ -1230,3 +813,423 @@ By the end of this plan, your colleague should be able to:
 **Total: 6-8 hours per day for 14 days**
 
 Good luck! 🚀
+
+
+
+#####################################################################
+# PLAN 2
+
+
+# 4‑Week MERN + TypeScript Intensive: Study Plan + Project (SecureNotes)
+
+## Goal: bring a colleague from shaky MERN knowledge to solid full‑stack competency (TypeScript + Node/Express + MongoDB + React + Redux Toolkit + React Query), with strong practical knowledge of middleware, authentication & authorization, encryption, and common web app security patterns.
+
+### This document contains:
+	•	A 4‑week plan with weekly learning goals and daily exercises.
+	•	A detailed small project (SecureNotes) with full requirements, API spec, DB models, folder structure and a step‑by‑step execution plan.
+	•	Code examples (TypeScript + JS) for critical pieces: server, middleware, auth, encryption, frontend store, axios + interceptors, protected routing.
+	•	Security checklist and evaluation rubric.
+
+⸻
+
+### What to expect / prerequisites
+	•	Prior knowledge assumed: basic JavaScript, git, basic HTML/CSS, familiarity with Node.js/npm. If not, add 3–5 days of prework.
+	•	Suggested cadence: practice/coding every weekday. Use weekends for deeper practice, polish and catch‑up. The plan is modular — skip or move items based on the colleague’s pace.
+
+⸻
+
+## Week 1 — Foundations: TypeScript + Node basics + Project scaffolding
+
+### Learning goals: TypeScript basics & patterns useful in full‑stack apps, setup a typed Node/Express backend, create DB models with types.
+
+#### Day‑by‑day (high level)
+	•	Day 1 — TypeScript essentials: types (primitive, union, tuple), interfaces vs types, enums, type inference, tsconfig essentials.
+	•	Exercises: convert small JS snippets to TS; create a typed User shape.
+	•	Day 2 — TS advanced: generics, utility types (Partial, Pick, Omit, Record), unknown vs any, mapped types.
+	•	Exercise: write a typed Repository<T> interface for CRUD operations.
+	•	Day 3 — Node + Express in TS: set up project, ts-node-dev or esbuild for dev, basic Express server, dotenv config.
+	•	Day 4 — MongoDB + Mongoose + Types: design Mongoose schemas with TypeScript interfaces; basic connection & error handling.
+	•	Day 5 — Project scaffolding & README: create monorepo or two repos (backend/frontend), define env variables, create skeleton routes and start scripts.
+
+#### Quick examples (setup snippets)
+
+tsconfig.json (minimal)
+```
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src"]
+}
+```
+#### Install (backend)
+```
+npm init -y
+npm i express mongoose dotenv bcryptjs jsonwebtoken cookie-parser helmet cors
+npm i -D typescript ts-node-dev @types/express @types/node @types/cookie-parser
+
+Basic Express server (src/server.ts)
+
+import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const app = express();
+app.use(helmet());
+app.use(cors({ origin: process.env.FRONTEND_ORIGIN, credentials: true }));
+app.use(express.json());
+app.use(cookieParser());
+
+app.get('/_health', (_req, res) => res.json({ ok: true }));
+
+const port = process.env.PORT || 4000;
+app.listen(port, () => console.log(`Server running on ${port}`));
+
+```
+
+⸻
+
+## Week 2 — Server internals, middleware, auth basics & encryption fundamentals
+
+Learning goals: write robust middleware, implement registration/login with secure password storage, JWT + refresh tokens concept, basic encryption for sensitive fields.
+
+### Topics & exercises
+	•	Middleware patterns: request validation, central error handler, logging middleware (winston or simple console), async error wrapper.
+	•	Auth flow: register (hash with bcrypt), login (verify + issue access token + refresh token), protect routes with middleware, role checks.
+	•	Refresh token best practices: rotate refresh tokens, store refresh tokens in DB (or short lived with fingerprint) and set refresh cookie as HttpOnly; Secure; SameSite=Strict.
+	•	Encryption: symmetric encryption for storing sensitive user data (not passwords!) using Node crypto (AES‑GCM recommended). Passwords must be hashed, not encrypted.
+
+### Key code snippets
+```js
+User model (Mongoose, simplified)
+
+import { Schema, model, Document } from 'mongoose';
+
+export interface IUser extends Document {
+  email: string;
+  passwordHash: string;
+  role: 'user' | 'admin';
+}
+
+const UserSchema = new Schema<IUser>({
+  email: { type: String, required: true, unique: true },
+  passwordHash: { type: String, required: true },
+  role: { type: String, default: 'user' }
+}, { timestamps: true });
+
+export const UserModel = model<IUser>('User', UserSchema);
+
+Register & Login (essential parts)
+
+// utils/auth.ts
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+export async function hashPassword(pw: string) {
+  return bcrypt.hash(pw, 12);
+}
+export async function comparePassword(pw: string, hash: string) {
+  return bcrypt.compare(pw, hash);
+}
+export function signAccessToken(payload: object) {
+  return jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET!, { expiresIn: '15m' });
+}
+export function signRefreshToken(payload: object) {
+  return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET!, { expiresIn: '7d' });
+}
+
+Auth middleware (protect routes)
+
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ message: 'No token' });
+  const token = auth.split(' ')[1];
+  try {
+    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!);
+    // attach user to req (cast as any) - in prod, use typed request
+    (req as any).user = payload;
+    return next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+}
+```
+### Symmetric encrypt/decrypt util (AES‑256‑GCM)
+```js
+import crypto from 'crypto';
+
+const ALGO = 'aes-256-gcm';
+const IV_LEN = 12;
+
+export function encrypt(text: string, keyBase64: string) {
+  const key = Buffer.from(keyBase64, 'base64');
+  const iv = crypto.randomBytes(IV_LEN);
+  const cipher = crypto.createCipheriv(ALGO, key, iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, encrypted]).toString('base64');
+}
+
+export function decrypt(payloadB64: string, keyBase64: string) {
+  const data = Buffer.from(payloadB64, 'base64');
+  const iv = data.slice(0, IV_LEN);
+  const tag = data.slice(IV_LEN, IV_LEN + 16);
+  const encrypted = data.slice(IV_LEN + 16);
+  const key = Buffer.from(keyBase64, 'base64');
+  const decipher = crypto.createDecipheriv(ALGO, key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+}
+```
+Note: store encryption keys in secure secrets (env manager, Vault). Never commit keys.
+
+⸻
+
+## Week 3 — Frontend: React + TypeScript + Redux Toolkit + React Query + secure navigation
+
+### Learning goals: build typed React apps with state management and server data fetching, implement secure auth flows client side, protect navigation and sensitive routes, use react-query for server state.
+
+### Topics & exercises
+	•	Scaffold: create Vite + React + TypeScript app.
+	•	Forms & validation: react-hook-form + zod for typed validation and runtime checks.
+	•	State management: Redux Toolkit for global UI/auth state; keep minimal state (auth metadata). Use RTK query only if needed — otherwise prefer React Query for server data.
+	•	React Query: use useQuery/useMutation, caching strategy, optimistic updates for CRUD.
+	•	Auth patterns: store access token in memory (React context / Redux), refresh token as HttpOnly cookie; implement Axios instance with interceptor that attempts refresh on 401.
+	•	Navigation security: ProtectedRoute component, role guard, route-level lazy loading and avoiding leaking protected UI.
+
+Frontend code snippets
+```js
+Axios instance with interceptor (errors -> refresh)
+
+// src/api/axios.ts
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE,
+  withCredentials: true // important for HttpOnly refresh cookie
+});
+
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function onRefreshed(token: string) {
+  refreshSubscribers.forEach(cb => cb(token));
+  refreshSubscribers = [];
+}
+
+api.interceptors.response.use(
+  r => r,
+  async err => {
+    const original = err.config;
+    if (err.response?.status === 401 && !original._retry) {
+      original._retry = true;
+      if (!isRefreshing) {
+        isRefreshing = true;
+        try {
+          const { data } = await api.post('/auth/refresh');
+          isRefreshing = false;
+          onRefreshed(data.accessToken);
+        } catch (e) {
+          isRefreshing = false;
+          // redirect to login
+          window.location.href = '/login';
+          return Promise.reject(e);
+        }
+      }
+      return new Promise((resolve) => {
+        refreshSubscribers.push((token: string) => {
+          original.headers.Authorization = `Bearer ${token}`;
+          resolve(axios(original));
+        });
+      });
+    }
+    return Promise.reject(err);
+  }
+);
+
+export default api;
+``` 
+### Protected route (React Router v6)
+```js
+import { Navigate, Outlet } from 'react-router-dom';
+import { useAppSelector } from '../store/hooks';
+
+export function RequireAuth({ allowedRoles }: { allowedRoles?: string[] }) {
+  const auth = useAppSelector(s => s.auth);
+  if (!auth.isAuthenticated) return <Navigate to="/login" replace />;
+  if (allowedRoles && !allowedRoles.includes(auth.user?.role)) return <Navigate to="/unauthorized" replace />;
+  return <Outlet />;
+}
+
+React Query example (fetch notes)
+
+import { useQuery } from '@tanstack/react-query';
+import api from './axios';
+
+export function useNotes() {
+  return useQuery(['notes'], async () => {
+    const { data } = await api.get('/notes');
+    return data;
+  }, { staleTime: 1000 * 60 });
+}
+
+```
+
+⸻
+
+## Week 4 — Hardening, testing, deployment, final polish
+
+#### Learning goals: security hardening, logging, tests, CI, containerization, final project delivery.
+
+#### Topics & checklist
+	•	Server hardening: Helmet CSP config, remove X-Powered-By, rate limiting (express-rate-limit), enforce HTTPS (redirect), CORS whitelist.
+	•	Input validation & sanitization: use zod or joi on all endpoints, sanitize strings to prevent XSS on output.
+	•	Secrets & configs: load from env, do not commit .env, use .env.example.
+	•	Logging & monitoring: structured logs, request IDs, error telemetry (Sentry), audit logs for critical actions (login, role change, share note).
+	•	Testing: unit tests for utilities (auth, encrypt), integration tests for APIs (supertest), UI tests (React Testing Library), e2e (Cypress).
+	•	Deployment: Dockerize backend & frontend, use docker-compose for local stack, set up basic CI (GitHub Actions) for build + test + lint.
+
+⸻
+
+## Project: SecureNotes — full details
+
+### Short description: SecureNotes is a small MERN app where registered users can create encrypted personal notes, optionally share them with other users (authorization), and admins can manage users. The project requires strong focus on authentication, token management, encryption of note content at rest, and secure client/server interactions.
+
+### Features (MVP)
+	1.	User registration + login (email + password) with hashed password.
+	2.	JWT access tokens + refresh tokens (HttpOnly cookie). Access token used for API calls.
+	3.	Create, Read, Update, Delete notes. Note content stored encrypted in DB.
+	4.	Share note with another user (simple sharing model: grant read / edit rights).
+	5.	Role based pages: user and admin (admin can list and deactivate users).
+	6.	Audit log of critical events: login, failed login, note shared, note deleted.
+
+### Tech stack
+	•	Backend: Node.js, Express, TypeScript, Mongoose, bcrypt, jsonwebtoken, helmet, cors, express-rate-limit
+	•	Frontend: React + TypeScript (Vite), Redux Toolkit, React Query, React Router v6, Axios, react-hook-form + zod
+	•	DB: MongoDB (Atlas or local)
+	•	Dev tools: Docker, Jest/RTL, Supertest, ESLint, Prettier
+
+Folder structure (suggested)
+```
+secure-notes/
+  backend/
+    src/
+      controllers/
+      services/
+      middlewares/
+      models/
+      utils/
+      routes/
+      server.ts
+    package.json
+    tsconfig.json
+  frontend/
+    src/
+      components/
+      pages/
+      hooks/
+      api/
+      store/
+      App.tsx
+    package.json
+    tsconfig.json
+  docker-compose.yml
+  README.md
+```
+### DB Models (simplified)
+```
+User
+
+interface User {
+  _id: ObjectId;
+  email: string;
+  passwordHash: string;
+  role: 'user' | 'admin';
+  disabled?: boolean;
+}
+
+Note
+
+interface Note {
+  _id: ObjectId;
+  ownerId: ObjectId;
+  title: string; // optional to store plaintext or encrypted
+  contentEncrypted: string; // encrypted blob (base64)
+  sharedWith: Array<{ userId: ObjectId; permissions: 'read' | 'edit' }>;
+  createdAt: Date;
+}
+
+RefreshToken (optional)
+
+interface RefreshToken {
+  token: string;
+  userId: ObjectId;
+  expiresAt: Date;
+  revoked?: boolean;
+  fingerprint?: string; // optional client fingerprint
+}
+```
+### API spec (example endpoints)
+	•	POST /api/auth/register — body { email, password } -> 201 created
+	•	POST /api/auth/login — body { email, password } -> returns { accessToken } and sets refresh cookie
+	•	POST /api/auth/refresh — reads refresh cookie -> sets new accessToken (and rotate refresh)
+	•	POST /api/auth/logout — invalidates refresh token (clear cookie)
+	•	GET /api/notes — auth required -> returns user notes and shared notes
+	•	POST /api/notes — auth required -> create note (encrypt content server side)
+	•	PUT /api/notes/:id — update note (owner or edit permission)
+	•	POST /api/notes/:id/share — share note with user (owner only)
+
+Include request/response examples in real implementation (use Postman for testing).
+
+⸻
+
+## Step‑by‑step execution plan (milestones + tasks)
+
+### Milestone 0: repo & environment
+	1.	Create secure-notes repo (or two repos). Add .gitignore, README, .env.example.
+	2.	Create backend scaffold (npm, TypeScript, Express). Create start/dev scripts.
+	3.	Create frontend scaffold (Vite). Add eslint + prettier configs.
+
+### Milestone 1: Basic auth & user model
+	1.	Implement User model and DB connection.
+	2.	Implement POST /auth/register that hashes password and saves user.
+	3.	Implement POST /auth/login that verifies password and issues access token and sets refresh cookie.
+	4.	Implement requireAuth middleware and a protected test endpoint GET /me.
+
+### Milestone 2: Notes CRUD + encryption
+	1.	Implement Note model; create encrypt() / decrypt() util.
+	2.	Implement POST /notes that encrypts content server‑side before saving.
+	3.	Implement GET /notes to decrypt notes for authorized user.
+	4.	Implement PUT /notes/:id and DELETE /notes/:id with permission checks.
+
+### Milestone 3: Sharing & roles
+	1.	Implement POST /notes/:id/share — send invite or set sharedWith.
+	2.	Implement admin routes to list/deactivate users.
+	3.	Add audit logging for share/delete/login events.
+
+### Milestone 4: Refresh tokens & client flows
+	1.	Implement refresh token storage (DB) and endpoint to rotate/issue new tokens.
+	2.	Frontend: implement login/register pages. Store accessToken in memory and rely on refresh cookie.
+	3.	Implement Axios interceptor to refresh on 401.
+
+### Milestone 5: Hardening, tests & deployment
+	1.	Add helmet, rate limiter, input validation, CORS whitelist.
+	2.	Add unit tests (Jest) and integration tests (supertest).
+	3.	Dockerize and create docker-compose for local dev, add README with run steps.
+	4.	Add CI workflow to run lint/test/build on PRs.
+
+⸻
+
+
